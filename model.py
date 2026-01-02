@@ -109,10 +109,7 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
 
         # Filter boxes
         for box, label, score in zip(boxes, labels, scores):
-            if score < score_thresh:
-                continue
-            cls = CLASSES[label]
-            if cls == "__background__":
+            if score < score_thresh or CLASSES[label] == "__background__":
                 continue
             box = box.tolist()
             if not inside_lung(box, roi):
@@ -120,18 +117,16 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
             if not valid_box(box, img.size[0], img.size[1]):
                 continue
             detections.append({
-                "label": cls,
+                "label": CLASSES[label],
                 "score": float(score),
                 "box": box
             })
 
         # Limit to max_boxes
-        if len(detections) > max_boxes:
-            # Keep top max_boxes by score
-            detections = sorted(detections, key=lambda x: x["score"], reverse=True)[:max_boxes]
+        detections = sorted(detections, key=lambda x: x["score"], reverse=True)[:max_boxes]
 
         # -----------------------------
-        # Normal vs Abnormal logic (UNCHANGED)
+        # Normal vs Abnormal logic
         # -----------------------------
         if len(detections) == 0:
             status = "Normal"
@@ -160,8 +155,15 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
             draw.rectangle([x1, y1-text_height, x1+text_width, y1], fill="red")
             draw.text((x1, y1-text_height), text, fill="white", font=font)
 
-        # Save annotated image
-        out_path = image_path.replace(".jpg", "_pred.jpg").replace(".png", "_pred.png")
+        # -----------------------------
+        # Save annotated image in static/outputs
+        # -----------------------------
+        filename = os.path.basename(image_path)
+        name, ext = os.path.splitext(filename)
+        out_filename = f"{name}_pred{ext}"
+        out_dir = os.path.join("static", "outputs")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, out_filename)
         img.save(out_path)
 
         return {
@@ -178,5 +180,4 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
             "reason": "Processing failed",
             "detections": []
         }
-
 
