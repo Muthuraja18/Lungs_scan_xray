@@ -1,19 +1,25 @@
 from flask import Flask, request, jsonify, render_template
 import os
 from model import predict
-from utils import draw_boxes
 from llm import generate_llm_report
-from PIL import Image
 
+# ---------------------------
+# Flask app setup
+# ---------------------------
 app = Flask(__name__, static_folder="static")
 
+# Use relative paths for Linux/Render
 UPLOAD_FOLDER = os.path.join("static", "uploads")
 OUTPUT_FOLDER = os.path.join("static", "outputs")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Classes (keep in sync with model.py)
 CLASS_NAMES = ["__background__", "opacity", "nodule", "consolidation", "effusion"]
 
+# ---------------------------
+# Normalize detection output
+# ---------------------------
 def normalize_detections(detections, class_names):
     normalized = []
     for d in detections:
@@ -25,6 +31,9 @@ def normalize_detections(detections, class_names):
             normalized.append({"label": label_name, "score": score, "box": box})
     return normalized
 
+# ---------------------------
+# Routes
+# ---------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -36,22 +45,26 @@ def upload():
         if not file or file.filename == "":
             return jsonify({"error": "No file uploaded"})
 
+        # Save original image
         img_filename = file.filename
         img_path = os.path.join(UPLOAD_FOLDER, img_filename)
-        out_path = os.path.join(OUTPUT_FOLDER, img_filename)
         file.save(img_path)
 
+        # Run model prediction
         result = predict(img_path)
         normalized_detections = normalize_detections(result.get("detections", []), CLASS_NAMES)
 
-        if normalized_detections:
-            draw_boxes(img_path, normalized_detections, out_path, CLASS_NAMES)
-            output_image = f"/static/outputs/{img_filename}"
+        # Determine output image
+        if normalized_detections and result.get("output_image"):
+            # If model drew boxes, use that output
+            out_img_path = os.path.basename(result["output_image"])
+            output_image = f"/static/outputs/{out_img_path}"
             abnormal = True
         else:
             output_image = f"/static/uploads/{img_filename}"
             abnormal = False
 
+        # Generate LLM report
         llm_report = generate_llm_report(
             normalized_detections,
             reason=result.get("reason") if abnormal else "No lung abnormalities detected."
@@ -71,6 +84,10 @@ def upload():
         return jsonify({"error": f"Error processing image: {e}"})
 
 
+# ---------------------------
+# Main
+# ---------------------------
 if __name__ == "__main__":
+    # Use Render dynamic port
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
