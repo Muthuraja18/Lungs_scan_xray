@@ -1,18 +1,27 @@
 import torch
 import torchvision
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from PIL import Image, ImageDraw, ImageFont
 import torchvision.transforms as T
 import os
 import numpy as np
 
+# ---------------------------
+# Memory safety (CRITICAL)
+# ---------------------------
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 DEVICE = "cpu"
 CLASSES = ["__background__", "opacity", "nodule", "consolidation", "effusion"]
-MODEL_PATH = os.path.join("models", "fasterrcnn_resnet18.pth")  # your trained checkpoint
+MODEL_PATH = os.path.join("models", "fasterrcnn_resnet18.pth")
+
+transform = T.Compose([T.ToTensor()])
 
 # ---------------------------
-# Load model (ResNet18 backbone)
+# Lazy-loaded model (singleton)
 # ---------------------------
+_model = None
+
 def load_model():
     backbone = torchvision.models.resnet18(weights=None)
     backbone.out_channels = 512
@@ -33,8 +42,11 @@ def load_model():
     model.eval()
     return model
 
-model = load_model()
-transform = T.Compose([T.ToTensor()])
+def get_model():
+    global _model
+    if _model is None:
+        _model = load_model()
+    return _model
 
 # ---------------------------
 # Prediction
@@ -50,6 +62,7 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
     if img is None:
         return {"status": "Error", "reason": "Invalid image", "detections": []}
 
+    model = get_model()  # ✅ load only once
     img_tensor = transform(img).unsqueeze(0)
 
     try:
@@ -82,23 +95,21 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
         for det in detections:
             x1, y1, x2, y2 = det["box"]
             draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
-            text = f"{det['label']} ({det['score']:.2f})"
-            draw.text((x1, y1-15), text, fill="white", font=font)
+            draw.text((x1, y1 - 15),
+                      f"{det['label']} ({det['score']:.2f})",
+                      fill="white",
+                      font=font)
 
-        # Save output in static/outputs
-        filename = os.path.basename(image_path)
-        name, ext = os.path.splitext(filename)
         out_dir = os.path.join("static", "outputs")
         os.makedirs(out_dir, exist_ok=True)
+
+        name, ext = os.path.splitext(os.path.basename(image_path))
         out_path = os.path.join(out_dir, f"{name}_pred{ext}")
         img.save(out_path)
 
-        status = "Abnormal" if detections else "Normal"
-        reason = "Localized lung abnormality detected." if detections else "No focal lung abnormality detected."
-
         return {
-            "status": status,
-            "reason": reason,
+            "status": "Abnormal" if detections else "Normal",
+            "reason": "Localized lung abnormality detected." if detections else "No focal lung abnormality detected.",
             "detections": detections,
             "output_image": out_path
         }
