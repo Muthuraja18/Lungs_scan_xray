@@ -7,20 +7,21 @@ import os
 import numpy as np
 
 DEVICE = "cpu"
-
-# Classes
 CLASSES = ["__background__", "opacity", "nodule", "consolidation", "effusion"]
-
-# Path to your trained model
-MODEL_PATH = os.path.join("models", "fasterrcnn_best.pth")
+MODEL_PATH = os.path.join("models", "fasterrcnn_resnet18.pth")  # your trained checkpoint
 
 # ---------------------------
-# Load model
+# Load model (ResNet18 backbone)
 # ---------------------------
 def load_model():
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=None)
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, len(CLASSES))
+    backbone = torchvision.models.resnet18(weights=None)
+    backbone.out_channels = 512
+
+    model = torchvision.models.detection.FasterRCNN(
+        backbone,
+        num_classes=len(CLASSES),
+        min_size=512
+    )
 
     checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
     if "model_state_dict" in checkpoint:
@@ -35,64 +36,19 @@ def load_model():
 model = load_model()
 transform = T.Compose([T.ToTensor()])
 
-def is_ct_scan(img):
-    """
-    Simple check to reject CT slices based on shape and contrast.
-    Returns True if image is likely a CT slice, False otherwise.
-    """
-    arr = np.array(img.convert("L"))
-    h, w = arr.shape
-    aspect_ratio = w / h
-    contrast = arr.std()
-
-    # CT slices are usually square and have high contrast
-    if 0.9 < aspect_ratio < 1.1 and contrast > 70:
-        return True
-    return False
-
-# ---------------------------
-# Lung ROI helpers
-# ---------------------------
-def lung_roi(img):
-    w, h = img.size
-    return int(0.15*w), int(0.20*h), int(0.85*w), int(0.85*h)
-
-def inside_lung(box, roi):
-    x1, y1, x2, y2 = box
-    lx1, ly1, lx2, ly2 = roi
-    cx, cy = (x1+x2)/2, (y1+y2)/2
-    return lx1 <= cx <= lx2 and ly1 <= cy <= ly2
-
-def valid_box(box, img_w, img_h):
-    x1, y1, x2, y2 = box
-    bw, bh = x2-x1, y2-y1
-    if bw < 30 or bh < 30 or bw > 0.6*img_w or bh > 0.6*img_h:
-        return False
-    return True
-
-
 # ---------------------------
 # Prediction
+# ---------------------------
 def safe_open_image(path):
     try:
         return Image.open(path).convert("RGB")
-    except Exception as e:
-        print("IMAGE LOAD ERROR:", e)
+    except:
         return None
 
-# ---------------------------
 def predict(image_path, score_thresh=0.03, max_boxes=4):
     img = safe_open_image(image_path)
     if img is None:
         return {"status": "Error", "reason": "Invalid image", "detections": []}
-
-    # Reject CT scans
-    if is_ct_scan(img):
-        return {
-            "status": "Error",
-            "reason": "CT image detected. Please upload chest X-ray only.",
-            "detections": []
-        }
 
     img_tensor = transform(img).unsqueeze(0)
 
@@ -104,36 +60,17 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
         labels = output["labels"].cpu().numpy()
         scores = output["scores"].cpu().numpy()
 
-        roi = lung_roi(img)
         detections = []
-
-        # Filter boxes
         for box, label, score in zip(boxes, labels, scores):
             if score < score_thresh or CLASSES[label] == "__background__":
-                continue
-            box = box.tolist()
-            if not inside_lung(box, roi):
-                continue
-            if not valid_box(box, img.size[0], img.size[1]):
                 continue
             detections.append({
                 "label": CLASSES[label],
                 "score": float(score),
-                "box": box
+                "box": box.tolist()
             })
 
-        # Limit to max_boxes
         detections = sorted(detections, key=lambda x: x["score"], reverse=True)[:max_boxes]
-
-        # -----------------------------
-        # Normal vs Abnormal logic
-        # -----------------------------
-        if len(detections) == 0:
-            status = "Normal"
-            reason = "No focal lung abnormality detected."
-        else:
-            status = "Abnormal"
-            reason = "Localized lung abnormality detected."
 
         # Draw boxes
         draw = ImageDraw.Draw(img)
@@ -146,25 +83,18 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
             x1, y1, x2, y2 = det["box"]
             draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
             text = f"{det['label']} ({det['score']:.2f})"
-            try:
-                text_width, text_height = font.getsize(text)
-            except AttributeError:
-                bbox = draw.textbbox((0,0), text, font=font)
-                text_width, text_height = bbox[2]-bbox[0], bbox[3]-bbox[1]
+            draw.text((x1, y1-15), text, fill="white", font=font)
 
-            draw.rectangle([x1, y1-text_height, x1+text_width, y1], fill="red")
-            draw.text((x1, y1-text_height), text, fill="white", font=font)
-
-        # -----------------------------
-        # Save annotated image in static/outputs
-        # -----------------------------
+        # Save output in static/outputs
         filename = os.path.basename(image_path)
         name, ext = os.path.splitext(filename)
-        out_filename = f"{name}_pred{ext}"
         out_dir = os.path.join("static", "outputs")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, out_filename)
+        out_path = os.path.join(out_dir, f"{name}_pred{ext}")
         img.save(out_path)
+
+        status = "Abnormal" if detections else "Normal"
+        reason = "Localized lung abnormality detected." if detections else "No focal lung abnormality detected."
 
         return {
             "status": status,
@@ -175,9 +105,4 @@ def predict(image_path, score_thresh=0.03, max_boxes=4):
 
     except Exception as e:
         print("PREDICTION ERROR:", e)
-        return {
-            "status": "Error",
-            "reason": "Processing failed",
-            "detections": []
-        }
-
+        return {"status": "Error", "reason": "Processing failed", "detections": []}
