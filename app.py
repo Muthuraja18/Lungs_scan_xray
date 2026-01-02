@@ -1,11 +1,11 @@
+# app.py
 from flask import Flask, request, jsonify, render_template
 import os
 from model import predict
-from llm import generate_llm_report
+from llm import generate_llm_report  # Your LLM report function
 
 app = Flask(__name__, static_folder="static")
 
-# Folders (relative paths)
 UPLOAD_FOLDER = os.path.join("static", "uploads")
 OUTPUT_FOLDER = os.path.join("static", "outputs")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
