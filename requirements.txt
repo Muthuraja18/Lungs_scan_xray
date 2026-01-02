@@ -1,0 +1,7 @@
+Flask
+torch
+torchvision
+Pillow
+groq
+requests
+openai

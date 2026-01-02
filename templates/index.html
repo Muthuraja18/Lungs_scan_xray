@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CliniScan: Lung Abnormality Detection</title>
+<style>
+    /* ---------- Animated Gradient Background ---------- */
+    body {
+        font-family: 'Arial', sans-serif;
+        text-align: center;
+        padding: 50px 20px;
+        background: linear-gradient(-45deg, #6a11cb, #2575fc, #ff6a00, #ffcb00);
+        background-size: 400% 400%;
+        animation: gradientBG 15s ease infinite;
+        transition: background 0.5s ease;
+    }
+
+    @keyframes gradientBG {
+        0% {background-position: 0% 50%;}
+        50% {background-position: 100% 50%;}
+        100% {background-position: 0% 50%;}
+    }
+
+    h1 {
+        color: #fff;
+        margin-bottom: 5px;
+        font-size: 2.5em;
+        text-shadow: 1px 1px 8px rgba(0,0,0,0.3);
+    }
+
+    p.subtitle {
+        color: #f0f0f0;
+        margin-bottom: 30px;
+        font-size: 1.2em;
+        text-shadow: 1px 1px 5px rgba(0,0,0,0.2);
+    }
+
+    /* ---------- Drop Area ---------- */
+    #dropArea {
+        border: 2px dashed #fff;
+        border-radius: 15px;
+        padding: 50px;
+        margin: 0 auto 20px auto;
+        width: 400px;
+        max-width: 90%;
+        background: rgba(255,255,255,0.1);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 25px rgba(0,0,0,0.2);
+        color: #fff;
+        font-weight: bold;
+        animation: floatDrop 3s ease-in-out infinite;
+    }
+
+    @keyframes floatDrop {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-5px); }
+        100% { transform: translateY(0px); }
+    }
+
+    #dropArea.hover {
+        border-color: #ffec00;
+        background: rgba(255,255,255,0.3);
+        transform: scale(1.05);
+        box-shadow: 0 8px 35px rgba(0,0,0,0.25);
+    }
+
+    #dropArea span {
+        text-decoration: underline;
+        color: #ffec00;
+    }
+
+    /* ---------- Status ---------- */
+    #status.normal { color: #00ff99; transform: scale(1.05); }
+    #status.abnormal { color: #ff3860; transform: scale(1.05); }
+
+    /* ---------- Result Image ---------- */
+    #resultImage {
+        max-width: 500px;
+        margin-top: 20px;
+        display: none;
+        border-radius: 12px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        opacity: 0;
+        transition: opacity 0.6s ease, transform 0.5s ease, box-shadow 0.5s ease, border 0.5s ease;
+        transform: scale(0.8);
+        border: 4px solid rgba(255,255,255,0.3);
+    }
+
+    /* Show animation */
+    #resultImage.show {
+        opacity: 1;
+        transform: scale(1);
+        animation: glowPulse 2s ease-in-out infinite alternate;
+    }
+
+    /* Glow animation for abnormal/normal */
+    @keyframes glowPulse {
+        0% { box-shadow: 0 0 15px rgba(0, 255, 255, 0.4); }
+        50% { box-shadow: 0 0 25px rgba(0, 255, 255, 0.7); }
+        100% { box-shadow: 0 0 15px rgba(0, 255, 255, 0.4); }
+    }
+
+    /* ---------- Report ---------- */
+    #report {
+        max-width: 700px;
+        margin: 20px auto;
+        background: rgba(255,255,255,0.2);
+        padding: 20px;
+        border-radius: 12px;
+        display: none;
+        text-align: left;
+        box-shadow: 0 6px 25px rgba(0,0,0,0.2);
+        opacity: 0;
+        transition: opacity 0.6s ease, transform 0.5s ease;
+        transform: translateY(20px);
+        overflow-x: auto;
+        color: #fff;
+        font-weight: 500;
+    }
+
+    #report.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    /* ---------- Table ---------- */
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.95em;
+        color: #fff;
+    }
+
+    table th, table td {
+        border: 1px solid rgba(255,255,255,0.5);
+        padding: 10px;
+        text-align: left;
+    }
+
+    table th {
+        background: rgba(0,0,0,0.3);
+        color: #fff;
+    }
+
+    table tr:nth-child(even) {
+        background: rgba(0,0,0,0.1);
+    }
+
+    table tr:hover {
+        background: rgba(255,255,255,0.2);
+    }
+
+    @media (max-width: 600px){
+        #dropArea { padding: 30px; }
+        #resultImage { max-width: 90%; }
+        #report { max-width: 95%; padding: 15px; }
+    }
+</style>
+</head>
+<body>
+
+<h1>CliniScan: Lung Abnormality Detection</h1>
+<p class="subtitle">AI-powered medical image analysis for early diagnosis</p>
+
+<div id="dropArea">
+    Drag & Drop Chest X-ray <br> or <span>Click to Browse</span>
+</div>
+<input type="file" id="image" name="image" accept="image/*" style="display:none;">
+
+<p id="status"></p>
+<img id="resultImage" src="">
+<div id="report"></div>
+
+<script>
+const dropArea = document.getElementById("dropArea");
+const imageInput = document.getElementById("image");
+const status = document.getElementById("status");
+const resultImage = document.getElementById("resultImage");
+const reportDiv = document.getElementById("report");
+
+// Drag & Click events
+dropArea.addEventListener("click", () => imageInput.click());
+dropArea.addEventListener("dragover", e => { 
+    e.preventDefault(); 
+    dropArea.classList.add("hover"); 
+});
+dropArea.addEventListener("dragleave", e => dropArea.classList.remove("hover"));
+dropArea.addEventListener("drop", e => {
+    e.preventDefault(); 
+    dropArea.classList.remove("hover");
+    if(e.dataTransfer.files.length){ 
+        imageInput.files = e.dataTransfer.files; 
+        startUpload(); 
+    }
+});
+
+imageInput.addEventListener("change", () => { 
+    if(imageInput.files.length) startUpload(); 
+});
+
+function startUpload(){
+    const formData = new FormData();
+    formData.append("image", imageInput.files[0]);
+
+    // Reset UI
+    status.innerText = "Processing...";
+    status.className = "";
+    resultImage.style.display = "none";
+    resultImage.className = "";
+    reportDiv.style.display = "none";
+    reportDiv.className = "";
+
+    fetch("/upload", { method:"POST", body:formData })
+    .then(res => res.json())
+    .then(data => {
+        console.log("UPLOAD DATA:", data);
+
+        if(data.error){ 
+            status.innerText = data.error; 
+            status.className = "abnormal";
+            return; 
+        }
+
+        // Show image
+        resultImage.src = data.output + "?t=" + new Date().getTime();
+        resultImage.style.display = "block";
+
+        // Glow color based on status
+        if(data.abnormal){
+            status.innerText = "🔴 Abnormal";
+            status.className = "abnormal";
+            resultImage.style.border = "4px solid #ff3860";
+            resultImage.style.animation = "glowPulseAb 2s ease-in-out infinite alternate";
+        } else {
+            status.innerText = "🟢 Normal";
+            status.className = "normal";
+            resultImage.style.border = "4px solid #00ff99";
+            resultImage.style.animation = "glowPulseNo 2s ease-in-out infinite alternate";
+        }
+
+        // Show result image with fade/scale animation
+        setTimeout(() => resultImage.classList.add("show"), 50);
+
+        // Report
+        reportDiv.innerHTML = data.report;
+        reportDiv.style.display = "block";
+        setTimeout(() => reportDiv.classList.add("show"), 50);
+    })
+    .catch(err => { 
+        console.error(err); 
+        status.innerText="Error processing image"; 
+        status.className = "abnormal";
+    });
+}
+</script>
+
+<style>
+    /* Glow animations for normal/abnormal */
+    @keyframes glowPulseAb {
+        0% { box-shadow: 0 0 15px rgba(255,56,96,0.4); }
+        50% { box-shadow: 0 0 30px rgba(255,56,96,0.7); }
+        100% { box-shadow: 0 0 15px rgba(255,56,96,0.4); }
+    }
+    @keyframes glowPulseNo {
+        0% { box-shadow: 0 0 15px rgba(0,255,153,0.4); }
+        50% { box-shadow: 0 0 30px rgba(0,255,153,0.7); }
+        100% { box-shadow: 0 0 15px rgba(0,255,153,0.4); }
+    }
+</style>
+
+</body>
+</html>
