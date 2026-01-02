@@ -12,7 +12,7 @@ torch.set_num_interop_threads(1)
 
 DEVICE = "cpu"
 CLASSES = ["__background__", "opacity", "nodule", "consolidation", "effusion"]
-MODEL_PATH = os.path.join("models", "fasterrcnn_resnet18.pth")
+MODEL_PATH = os.path.join("models", "fasterrcnn_best.pth")
 
 transform = T.Compose([T.ToTensor()])
 _model = None
