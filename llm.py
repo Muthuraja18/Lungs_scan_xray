@@ -1,7 +1,7 @@
 import requests
 import os
 
-GROQ_API_KEY = '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'
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 def get_groq_response(query):
