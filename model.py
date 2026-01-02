@@ -66,6 +66,9 @@ def get_model():
 # ================= PREDICTION =================
 def predict(image_path, score_thresh=0.3, max_boxes=4):
     try:
+        print("IMAGE PATH:", image_path)
+        print("MODEL EXISTS:", os.path.exists(MODEL_PATH))
+
         img = Image.open(image_path).convert("RGB")
         model = get_model()
 
@@ -74,33 +77,21 @@ def predict(image_path, score_thresh=0.3, max_boxes=4):
         with torch.no_grad():
             output = model(img_tensor)[0]
 
+        print("MODEL OUTPUT KEYS:", output.keys())
+
         detections = []
         for box, label, score in zip(
             output["boxes"],
             output["labels"],
             output["scores"]
         ):
-            if score < score_thresh or label == 0:
+            if score < score_thresh:
                 continue
             detections.append({
-                "label": CLASSES[label],
+                "label": CLASSES[int(label)],
                 "score": float(score),
                 "box": box.tolist()
             })
-
-        detections = sorted(
-            detections, key=lambda x: x["score"], reverse=True
-        )[:max_boxes]
-
-        # Draw boxes
-        draw = ImageDraw.Draw(img)
-        for d in detections:
-            draw.rectangle(d["box"], outline="red", width=3)
-            draw.text(
-                (d["box"][0], d["box"][1] - 15),
-                f"{d['label']} ({d['score']:.2f})",
-                fill="white"
-            )
 
         os.makedirs("static/outputs", exist_ok=True)
         out_path = "static/outputs/result.png"
@@ -113,9 +104,6 @@ def predict(image_path, score_thresh=0.3, max_boxes=4):
         }
 
     except Exception as e:
-        print("❌ PREDICTION ERROR:", e)
-        return {
-            "status": "Error",
-            "reason": str(e),
-            "detections": []
-        }
+        print("🔥 PREDICT ERROR 🔥", repr(e))
+        raise
+
