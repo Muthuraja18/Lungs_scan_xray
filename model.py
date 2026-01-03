@@ -1,40 +1,67 @@
 import torch
-import torchvision
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+import torch.nn as nn
+import torchvision.models as models
 from PIL import Image, ImageDraw, ImageFont
 import torchvision.transforms as T
 import os
 import numpy as np
 
-DEVICE = "cpu"
-
-# Classes
-CLASSES = ["__background__", "opacity", "nodule", "consolidation", "effusion"]
-
-# Path to your trained model
-
+# ================= CONFIG =================
+DEVICE = torch.device("cpu")  # CPU-only for Render
 MODEL_PATH = os.path.join("models", "mobilenet_xray.pth")
+CLASSES = ["Normal", "Abnormal"]  # For MobileNet classifier
 
-# ---------------------------
-# Load model
-# ---------------------------
+# Internal lazy-loaded model variable
+_model = None
+
+# ================= LOAD MODEL =================
 def load_model():
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=None)
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, len(CLASSES))
+    """
+    Loads the MobileNet X-ray classifier.
+    Lazy-loads to reduce memory usage on Render.
+    """
+    global _model
+    if _model is not None:
+        return _model
 
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
-    if "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
+    # Load lightweight MobileNet backbone
+    model = models.mobilenet_v2(weights=None)
+
+    # Replace classifier for your number of classes
+    in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features, len(CLASSES))
+
+    # Load checkpoint
+    if os.path.exists(MODEL_PATH):
+        checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            model.load_state_dict(checkpoint)
     else:
-        model.load_state_dict(checkpoint)
+        print(f"WARNING: Model file not found at {MODEL_PATH}")
 
+    # CPU only and eval mode
     model.to(DEVICE)
     model.eval()
-    return model
 
-model = load_model()
+    _model = model
+    return _model
+
+# ================= HELPER =================
+def get_model():
+    """Returns the loaded model (lazy-loaded)."""
+    return load_model()
+
+# ================= IMAGE HELPERS =================
 transform = T.Compose([T.ToTensor()])
+
+def safe_open_image(path):
+    try:
+        return Image.open(path).convert("RGB")
+    except Exception as e:
+        print("IMAGE LOAD ERROR:", e)
+        return None
 
 def is_ct_scan(img):
     """
@@ -45,15 +72,10 @@ def is_ct_scan(img):
     h, w = arr.shape
     aspect_ratio = w / h
     contrast = arr.std()
-
-    # CT slices are usually square and have high contrast
     if 0.9 < aspect_ratio < 1.1 and contrast > 70:
         return True
     return False
 
-# ---------------------------
-# Lung ROI helpers
-# ---------------------------
 def lung_roi(img):
     w, h = img.size
     return int(0.15*w), int(0.20*h), int(0.85*w), int(0.85*h)
@@ -70,17 +92,6 @@ def valid_box(box, img_w, img_h):
     if bw < 30 or bh < 30 or bw > 0.6*img_w or bh > 0.6*img_h:
         return False
     return True
-
-
-# ---------------------------
-# Prediction
-def safe_open_image(path):
-    try:
-        return Image.open(path).convert("RGB")
-    except Exception as e:
-        print("IMAGE LOAD ERROR:", e)
-        return None
-
 # ---------------------------
 def predict(image_path, score_thresh=0.03, max_boxes=4):
     img = safe_open_image(image_path)
