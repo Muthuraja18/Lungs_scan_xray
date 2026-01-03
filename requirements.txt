@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 torch
 torchvision 
 pillow 
@@ -5,3 +6,15 @@ numpy
 scikit-learn 
 matplotlib 
 tqdm
+=======
+Flask
+torch
+torchvision
+Pillow
+groq
+requests
+openai
+gunicorn
+
+
+>>>>>>> 18ec55264258a87339671e58577f97cb493427e6
